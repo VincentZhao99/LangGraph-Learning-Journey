@@ -1,4 +1,5 @@
 from langchain_core.tools import tool
+from langchain_community.tools.tavily_search import TavilySearchResults
 
 @tool
 def get_current_time() -> str:
@@ -15,3 +16,8 @@ def multiply(a: int, b: int) -> int:
 tools_list = [multiply, get_current_time]
 # 将工具映射为字典，方便按名称查找：{"multiply": multiply_func, ...}
 tools_map = {tool.name: tool for tool in tools_list}
+
+# 定义搜索工具，设置 k=3 表示返回最相关的 3 条结果
+web_search_tool = TavilySearchResults(k=3)
+# 你可以先本地测试一下
+# print(web_search_tool.invoke("2026年2月DeepSeek最新动态"))
