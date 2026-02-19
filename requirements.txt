@@ -1,0 +1,14 @@
+# 核心框架
+langchain==0.3.0
+langchain-openai==0.2.0
+langgraph==0.2.20
+
+# 扩展工具
+langchain-community==0.3.0
+python-dotenv==1.0.1
+
+# 网络请求与工具支持 (Tavily 相关)
+tavily-python==0.3.5
+# --- 明天 Day 8 预研 (建议提前加上) ---
+pypdf==4.1.0
+faiss-cpu==1.8.0
