@@ -86,16 +86,16 @@ if __name__ == "__main__":
     # 启动流水线
     inputs = {"messages": [HumanMessage(content=topic)]}
 
-    # 逐步打印团队的工作进度
+    final_article = ""
+
+    # 逐步打印团队的工作进度，并顺手捞出最终结果
     for output in multi_agent_app.stream(inputs):
         for node_name, state_update in output.items():
             print(f"\n✅ {node_name} 节点执行完毕！")
+            # 每次节点流转，都把最新的一条消息记下来。
+            # 最后一个节点(writer)写完后，这里存的自然就是最终的爆款文章！
+            final_article = state_update["messages"][-1].content
 
     print("\n" + "=" * 50)
     print("🎉 最终成稿：\n")
-    # 提取最后一条消息（一定是撰稿人写的爆款文章）
-    final_state = multi_agent_app.get_state(config={"configurable": {"thread_id": "1"}}).values
-    # 如果没设 checkpointer，get_state 可能为空，我们直接从 stream 最后的输出来拿：
-    # （这里为了简单，直接再次调用 invoke 获取最终结果）
-    final_result = multi_agent_app.invoke(inputs)
-    print(final_result["messages"][-1].content)
+    print(final_article)
