@@ -34,7 +34,7 @@ def inspect_faiss():
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
     # 注意：确认你的 FAISS 文件夹路径（这里假设叫 faiss_index 且和脚本同级）
-    faiss_path = "faiss_index"
+    faiss_path = "data/faiss_index"
 
     try:
         # 💡 allow_dangerous_deserialization=True 是必须的，因为我们要读取本地的 pkl 缓存文件
