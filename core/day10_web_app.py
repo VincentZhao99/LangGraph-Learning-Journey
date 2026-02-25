@@ -6,11 +6,21 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import StateGraph, START, END, MessagesState
 from langgraph.prebuilt import create_react_agent
-
+import requests
 # 【大白话】：开发过程中有时候底层库会报一些不影响运行的警告（红字），
 # 加这句能把它们静音，保证 Streamlit 网页清清爽爽。
 warnings.filterwarnings("ignore")
 load_dotenv()
+
+# WEBHOOK_URL = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=你的真实KEY"
+
+def publish_to_wechat(article_content):
+    """大白话：把终稿用 Markdown 格式推送到企微群"""
+    payload = {
+        "msgtype": "markdown",
+        "markdown": {"content": f"📢 **[AI 传媒公司] 最新爆款出炉！**\n\n{article_content}"}
+    }
+    requests.post(os.getenv("WEBHOOK_URL"), json=payload)
 
 # 导入联网搜索工具
 from core.tools import web_search_tool
@@ -159,6 +169,10 @@ if st.button("🚀 下达任务，开始干活！"):
         # 只要跳出上面那个循环，就说明走到了 END，完结撒花！
         status.update(label="任务完成！文章已过审！", state="complete", expanded=False)
         st.balloons()  # 网页飘气球特效！老板最爱！
+
+        # 💡 新增这一行：立刻推送到微信群！
+        publish_to_wechat(final_article)
+        st.success("✅ 文章已自动同步发送至【企业微信群】！请查收手机。")
 
     # 流水线彻底跑完后，把存下来的那篇最终过审稿子，正儿八经地打印出来
     st.divider()
