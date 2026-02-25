@@ -7,6 +7,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import StateGraph, START, END, MessagesState
 from langgraph.prebuilt import create_react_agent
 import requests
+import json
 # 【大白话】：开发过程中有时候底层库会报一些不影响运行的警告（红字），
 # 加这句能把它们静音，保证 Streamlit 网页清清爽爽。
 warnings.filterwarnings("ignore")
@@ -15,12 +16,29 @@ load_dotenv()
 # WEBHOOK_URL = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=你的真实KEY"
 
 def publish_to_wechat(article_content):
-    """大白话：把终稿用 Markdown 格式推送到企微群"""
+    """【防弹版】带字数限制和错误反馈的企微发送器"""
+    # ⚠️ 防坑核心：强行截断！防止大模型写的文章太长撑爆企微的 4096 字节限制
+    if len(article_content) > 1200:
+        safe_content = article_content[:1200] + "\n\n...（受限于企微字数，后文省略）"
+    else:
+        safe_content = article_content
+
     payload = {
         "msgtype": "markdown",
-        "markdown": {"content": f"📢 **[AI 传媒公司] 最新爆款出炉！**\n\n{article_content}"}
+        "markdown": {
+            "content": f"📢 **[AI 传媒公司] 最新爆款！**\n\n{safe_content}"
+        }
     }
-    requests.post(os.getenv("WEBHOOK_URL"), json=payload)
+
+    try:
+        response = requests.post(
+            os.getenv("WEBHOOK_URL"),
+            json=payload
+        )
+        # 把企微服务器的真实回答返回出去
+        return response.json()
+    except Exception as e:
+        return {"errcode": -1, "errmsg": str(e)}
 
 # 导入联网搜索工具
 from core.tools import web_search_tool
@@ -171,8 +189,15 @@ if st.button("🚀 下达任务，开始干活！"):
         st.balloons()  # 网页飘气球特效！老板最爱！
 
         # 💡 新增这一行：立刻推送到微信群！
-        publish_to_wechat(final_article)
-        st.success("✅ 文章已自动同步发送至【企业微信群】！请查收手机。")
+        # 💡 就在气球放完之后，紧接着加这三行代码！(注意缩进跟 st.balloons 对齐)
+        st.write("正在尝试呼叫企业微信...")
+        wx_result = publish_to_wechat(final_article)
+
+        # 把企微的真实反应直接打在网页上，让 Bug 无处遁形！
+        if wx_result.get("errcode") == 0:
+            st.success("✅ 爆款文章已成功轰炸企业微信群！")
+        else:
+            st.error(f"❌ 发送失败，企微报错信息：{wx_result}")
 
     # 流水线彻底跑完后，把存下来的那篇最终过审稿子，正儿八经地打印出来
     st.divider()
