@@ -7,7 +7,8 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import StateGraph, START, END, MessagesState
 from langgraph.prebuilt import create_react_agent
 
-# 屏蔽烦人的版本警告
+# 【大白话】：开发过程中有时候底层库会报一些不影响运行的警告（红字），
+# 加这句能把它们静音，保证 Streamlit 网页清清爽爽。
 warnings.filterwarnings("ignore")
 load_dotenv()
 
@@ -15,8 +16,10 @@ load_dotenv()
 from core.tools import web_search_tool
 
 # ==========================================
-# 1. 初始化模型
+# 1. 初始化模型 (给公司配统一的大脑)
 # ==========================================
+# 【大白话】：全公司上下（研究员、写手、主编）共用同一个大模型底座，
+# 就像公司统一采购了 DeepSeek 的大脑芯片。
 model = ChatOpenAI(
     model='deepseek-chat',
     openai_api_key=os.getenv("DEEPSEEK_API_KEY"),
@@ -24,9 +27,11 @@ model = ChatOpenAI(
 )
 
 # ==========================================
-# 2. 实例化三位员工 (定义节点)
+# 2. 实例化三位员工 (定义打工人节点)
 # ==========================================
+
 # --- 员工 1：研究员 ---
+# 【大白话】：这是个自带工具包的高级打工人（Agent）。用 create_react_agent 给它配了上网搜索的权利。
 researcher_agent = create_react_agent(
     model,
     tools=[web_search_tool],
@@ -35,24 +40,32 @@ researcher_agent = create_react_agent(
 
 
 def researcher_node(state: MessagesState):
+    # 【大白话】：让研究员干活，干完活把最新的结果（最后一条消息）塞进公司的状态总线（state）里。
     result = researcher_agent.invoke(state)
     return {"messages": [result["messages"][-1]]}
 
 
 # --- 员工 2：撰稿人 ---
 def writer_node(state: MessagesState):
+    # 【大白话】：写手是个纯文本处理机器（不需要工具）。给他一个人设（震惊体大师），
+    # 并告诉他：如果看到主编骂你，你就得乖乖道歉并重写！
     sys_msg = SystemMessage(content="""你是一个金牌自媒体写手。请根据历史信息写一篇短文。
     注意：如果看到了主编的【打回】意见，请务必向主编道歉，并根据他的严厉意见重写！
     要求：标题必须震惊，多用emoji，排版有呼吸感。""")
+
+    # 结合历史聊天记录（包括资料和被骂的记录）开始写稿
     response = model.invoke([sys_msg] + state["messages"])
     return {"messages": [response]}
 
 
-# --- 员工 3：主编 (新加入！) ---
+# --- 员工 3：主编 (审核质检员) ---
 def editor_node(state: MessagesState):
+    # 【大白话】：全村的希望！主编的 System Prompt 极其关键。
+    # 我们强行规定了它的输出格式：必须在开头写【通过】或【打回】，这决定了后面的程序怎么走。
     sys_msg = SystemMessage(content="""你是一个极其苛刻的自媒体主编。你要审核写手刚刚交来的文章。
     如果文章有具体数据、足够吸引人、emoji 运用得当，请在回复的最开头写【通过】，并给出简单表扬。
     如果文章平庸、缺少真实数据或不够震惊，请在回复的最开头写【打回】，并给出极其严厉的修改意见！""")
+
     response = model.invoke([sys_msg] + state["messages"])
     return {"messages": [response]}
 
@@ -61,32 +74,35 @@ def editor_node(state: MessagesState):
 # 3. 定义主编的“裁判”逻辑 (条件路由)
 # ==========================================
 def route_editor(state: MessagesState):
-    # 获取流水线里最新的一句话（主编刚刚说的话）
+    # 【大白话】：这里是代码层面而不是大模型层面的判断！
+    # 取出主编刚刚吐出来的最后一段话，像机器扫描一样寻找“【通过】”这三个字。
     last_msg = state["messages"][-1].content
     if "【通过】" in last_msg:
-        return END  # 审核通过，文章发布！
+        return END  # 审核通过，流水线可以下班了！
     else:
-        return "writer"  # 审核失败，把箭头指回写手，让他重写！
+        return "writer"  # 没找到“【通过】”（也就是被打回了），把箭头无情地指回写手节点！
 
 
 # ==========================================
-# 4. 组装复杂的循环流水线
+# 4. 组装复杂的循环流水线 (画图纸)
 # ==========================================
+# 【大白话】：一样用 @st.cache_resource 锁住，防止每次点按钮都重新建公司。
 @st.cache_resource
 def build_agency():
     builder = StateGraph(MessagesState)
 
-    # 录入三个员工
+    # 办理入职：把三个干活的函数注册进系统
     builder.add_node("researcher", researcher_node)
     builder.add_node("writer", writer_node)
     builder.add_node("editor", editor_node)
 
-    # 画流程连线
-    builder.add_edge(START, "researcher")  # 老板发话 -> 研究员去搜集
-    builder.add_edge("researcher", "writer")  # 搜集完 -> 给写手写初稿
-    builder.add_edge("writer", "editor")  # 写手写完 -> 给主编审核
+    # 画固定单行道：老板发话 -> 研究员 -> 写手 -> 主编
+    builder.add_edge(START, "researcher")
+    builder.add_edge("researcher", "writer")
+    builder.add_edge("writer", "editor")
 
-    # 💡 灵魂一步：主编审核后，根据 route_editor 的判断，决定去 END 还是回到 writer
+    # 💡 【大白话】：灵魂的一步！主编干完活后，系统去问 route_editor 这个裁判，
+    # 裁判指哪儿（END 还是 writer），下一步就去哪儿。这就形成了“死循环重写”的机制。
     builder.add_conditional_edges("editor", route_editor)
 
     return builder.compile()
@@ -95,28 +111,32 @@ def build_agency():
 app = build_agency()
 
 # ==========================================
-# 5. Streamlit 可视化网页
+# 5. Streamlit 可视化网页 (给老板看的驾驶舱)
 # ==========================================
 st.set_page_config(page_title="AI 传媒公司", page_icon="🏭")
 st.title("🏭 我的全自动 AI 传媒公司")
 st.markdown("工作流：**搜集员 (查资料) ➡️ 撰稿人 (写稿) 🔁 主编 (审核把关)**")
 
+# 老板输入框
 topic = st.text_input("你想让 AI 团队写什么主题的爆款文章？", value="请查一下马斯克最近的猛料！")
 
 if st.button("🚀 下达任务，开始干活！"):
-    # 为了防止 AI 互相杠上无限死循环重写，我们给 Graph 设个强制安全阀：最多流转 15 步
+    # ⚠️ 【大白话】：保险丝！因为我们有“打回重写”的循环，如果主编太杠精，或者写手太笨，
+    # 可能会无限死循环。 recursion_limit: 15 就是说，最多循环流转 15 步，强行断电，防止把 API 余额烧光！
     config = {"recursion_limit": 15}
     inputs = {"messages": [HumanMessage(content=topic)]}
 
-    final_article = ""  # 临时存放过审的终稿
+    final_article = ""  # 准备个空盒子，等过审了就把文章装进来
 
+    # 【大白话】：搞个折叠面板，展示团队疯狂甩锅、干活的过程
     with st.status("团队正在疯狂运转中...", expanded=True) as status:
-        # 开始启动流水线！
+
+        # 启动流水线，开始监听每个节点的动静
         for output in app.stream(inputs, config):
             for node_name, state_update in output.items():
                 msg = state_update["messages"][-1].content
 
-                # 根据当前干活的节点，在网页上打印对应的状态
+                # 【大白话】：根据当前是哪个打工人在动，网页上打出相应的“弹幕”
                 if node_name == "researcher":
                     st.write("🕵️‍♂️ **[研究员]** 资料搜集完毕，正在移交撰稿人...")
                     with st.expander("查看原始资料"):
@@ -124,21 +144,23 @@ if st.button("🚀 下达任务，开始干活！"):
 
                 elif node_name == "writer":
                     st.write("✍️ **[撰稿人]** 稿件已完成！战战兢兢地交由主编审核...")
-                    final_article = msg  # 先把稿子存在这里，如果一会过了，这就是终稿
+                    # 💡 注意：每次写完都先假装它是终稿存起来，万一下一步过了呢？
+                    final_article = msg
                     with st.expander("查看当前提交的草稿"):
                         st.write(msg)
 
                 elif node_name == "editor":
                     if "【通过】" in msg:
-                        st.success(f"🤬 **[主编]**：{msg}")
+                        st.success(f"🤬 **[主编]**：{msg}")  # 绿字表扬
                     else:
-                        st.error(f"🤬 **[主编]**：{msg}")
-                        st.warning("🔄 触发重写机制！稿件已打回给撰稿人...")
+                        st.error(f"🤬 **[主编]**：{msg}")  # 红字痛骂
+                        st.warning("🔄 触发重写机制！稿件已打回给撰稿人...")  # 提示循环发生了
 
+        # 只要跳出上面那个循环，就说明走到了 END，完结撒花！
         status.update(label="任务完成！文章已过审！", state="complete", expanded=False)
-        st.balloons()  # 放气球庆祝！
+        st.balloons()  # 网页飘气球特效！老板最爱！
 
-    # 流水线彻底跑完后，把存下来的终稿正式发表在网页上
+    # 流水线彻底跑完后，把存下来的那篇最终过审稿子，正儿八经地打印出来
     st.divider()
     st.header("📰 正式发布文章")
     st.markdown(final_article)
