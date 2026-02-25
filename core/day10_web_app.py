@@ -72,19 +72,28 @@ def researcher_node(state: MessagesState):
     result = researcher_agent.invoke(state)
     return {"messages": [result["messages"][-1]]}
 
-
-# --- 员工 2：撰稿人 ---
+# --- 升级版员工 2：撰稿人 (动态听令) ---
 def writer_node(state: MessagesState):
-    # 【大白话】：写手是个纯文本处理机器（不需要工具）。给他一个人设（震惊体大师），
-    # 并告诉他：如果看到主编骂你，你就得乖乖道歉并重写！
-    sys_msg = SystemMessage(content="""你是一个金牌自媒体写手。请根据历史信息写一篇短文。
-    注意：如果看到了主编的【打回】意见，请务必向主编道歉，并根据他的严厉意见重写！
-    要求：标题必须震惊，多用emoji，排版有呼吸感。""")
+    # 1. 偷看一眼上一条消息是谁发的，内容是什么
+    last_msg = state["messages"][-1].content
 
-    # 结合历史聊天记录（包括资料和被骂的记录）开始写稿
+    # 2. 用 Python 代码做绝对精准的判断
+    if "【打回】" in last_msg:
+        # 如果上一步是被主编骂了，你就得乖乖道歉并重写！
+        instruction = "你刚刚交上去的稿件被主编【打回】了！请务必在文章的最开头向主编郑重道歉，并严格根据主编的意见重写！"
+    else:
+        # 如果上一步是研究员查资料回来，那就正常写初稿，绝口不提道歉的事
+        instruction = "请根据前面搜集到的真实资料，写出一篇高质量的初稿。"
+
+    # 3. 动态组合最终的系统指令
+    sys_msg = SystemMessage(content=f"""你是一个金牌自媒体写手。
+    {instruction}
+    要求：标题必须震惊，多用emoji，排版有呼吸感，语言极具煽动性！
+    """)
+
+    # 开始干活 结合历史聊天记录（包括资料和被骂的记录）开始写稿
     response = model.invoke([sys_msg] + state["messages"])
     return {"messages": [response]}
-
 
 # --- 员工 3：主编 (审核质检员) ---
 def editor_node(state: MessagesState):
