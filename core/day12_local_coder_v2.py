@@ -2,7 +2,6 @@ import os
 import warnings
 import logging  # 💡 新增：引入 Python 内置的日志模块
 from dotenv import load_dotenv
-from langchain.chains.summarize.map_reduce_prompt import prompt_template
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 
@@ -38,14 +37,6 @@ SYSTEM_PROMPT = """你是一个顶级的全能 AI 工程师。
 如果任务涉及到复杂的计算或数据处理，请毫不犹豫地使用 execute_python_code 工具自己写代码解决！
 【⚠️省Token警告】：分析数据时，绝对不要打印整个 DataFrame！只能用 df.head() 或 df.info() 查看结构。把最终结果直接保存为文件！
 """
-
-# test prompt
-# '''
-# 👤 你的指令： "请帮我读取 Badminton.xlsx 文件。
-# 注意，这个 Excel 有多个页签。请你先写代码读取并打印出所有的 Sheet 名称。
-# 确认名字后，请专门读取名为**『上课日志』**（或者你实际的tab名字）的那个 Sheet 的数据。
-# 基于『上课日志』的数据，帮我统计每个学员每个月的上课次数，并生成一个月报表保存为 Excel 文件。"
-# '''
 
 agent = create_react_agent(model, tools, prompt=SYSTEM_PROMPT)
 

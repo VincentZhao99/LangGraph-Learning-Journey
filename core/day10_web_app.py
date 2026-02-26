@@ -8,6 +8,11 @@ from langgraph.graph import StateGraph, START, END, MessagesState
 from langgraph.prebuilt import create_react_agent
 import requests
 import json
+
+# 导入工具
+from core.tools import web_search_tool
+from core.code_tool import execute_python_code
+
 # 【大白话】：开发过程中有时候底层库会报一些不影响运行的警告（红字），
 # 加这句能把它们静音，保证 Streamlit 网页清清爽爽。
 warnings.filterwarnings("ignore")
@@ -40,9 +45,6 @@ def publish_to_wechat(article_content):
     except Exception as e:
         return {"errcode": -1, "errmsg": str(e)}
 
-# 导入联网搜索工具
-from core.tools import web_search_tool
-
 # ==========================================
 # 1. 初始化模型 (给公司配统一的大脑)
 # ==========================================
@@ -54,6 +56,10 @@ model = ChatOpenAI(
     openai_api_base=os.getenv("DEEPSEEK_BASE_URL")
 )
 
+# 🚀 升级后：研究员变成了黑客，既能搜网，又能写 Python 脚本跑数据！
+researcher_tools = [web_search_tool, execute_python_code]
+researcher_model = model.bind_tools(researcher_tools)
+
 # ==========================================
 # 2. 实例化三位员工 (定义打工人节点)
 # ==========================================
@@ -61,16 +67,22 @@ model = ChatOpenAI(
 # --- 员工 1：研究员 ---
 # 【大白话】：这是个自带工具包的高级打工人（Agent）。用 create_react_agent 给它配了上网搜索的权利。
 researcher_agent = create_react_agent(
-    model,
+    researcher_model,
     tools=[web_search_tool],
     prompt="你是一个严谨的资料搜集员。请使用搜索工具查阅最新信息，并总结出核心事实和数据。绝不能瞎编！"
 )
 
 
 def researcher_node(state: MessagesState):
-    # 【大白话】：让研究员干活，干完活把最新的结果（最后一条消息）塞进公司的状态总线（state）里。
-    result = researcher_agent.invoke(state)
-    return {"messages": [result["messages"][-1]]}
+    sys_msg = SystemMessage(content="""你是一个顶级的全栈数据研究员。
+    你的任务是为爆款文章搜集最硬核的数据。
+    1. 你可以使用网页搜索工具查找最新资讯。
+    2. 如果你需要计算复杂的数据、或者需要写 Python 脚本去读取某个本地/网络数据源，请毫不犹豫地使用 execute_python_code 工具！
+    务必保证提供给写手的数据是精准且真实的！""")
+
+    # 开始思考并调用工具
+    response = researcher_model.invoke([sys_msg] + state["messages"])
+    return {"messages": [response]}
 
 # --- 升级版员工 2：撰稿人 (动态听令) ---
 def writer_node(state: MessagesState):
