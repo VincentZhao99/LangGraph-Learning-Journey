@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 import warnings
+import logging  # 💡 加回日志模块
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -8,24 +9,28 @@ from langgraph.graph import StateGraph, START, END, MessagesState
 from langgraph.prebuilt import create_react_agent
 import requests
 
-# 导入咱们打造的工具
 from core.tools import web_search_tool
 from core.code_tool import execute_python_code
 
-# 屏蔽底层警告
 warnings.filterwarnings("ignore")
 load_dotenv()
 
+# ==========================================
+# 💡 恢复上帝视角：配置日志监控系统
+# ==========================================
+logging.basicConfig(
+    filename='agent_run.log',
+    level=logging.INFO,
+    format='\n' + '=' * 40 + '\n%(asctime)s - %(levelname)s\n%(message)s',
+    encoding='utf-8'
+)
+
 
 def publish_to_wechat(article_content):
-    """【防弹版】带字数限制和错误反馈的企微发送器"""
     webhook_url = os.getenv("WEBHOOK_URL")
-
-    # 💡 微调 1：安全校验，防止没配环境变量导致崩溃
     if not webhook_url:
         return {"errcode": -1, "errmsg": "本地 .env 文件中未配置 WEBHOOK_URL"}
 
-    # ⚠️ 强行截断！防止大模型写的文章太长撑爆企微的 4096 字节限制
     if len(article_content) > 1200:
         safe_content = article_content[:1200] + "\n\n...（受限于企微字数，后文省略）"
     else:
@@ -46,7 +51,7 @@ def publish_to_wechat(article_content):
 
 
 # ==========================================
-# 1. 初始化模型 (公司统一的大脑)
+# 1. 初始化模型
 # ==========================================
 model = ChatOpenAI(
     model='deepseek-chat',
@@ -55,35 +60,43 @@ model = ChatOpenAI(
 )
 
 # ==========================================
-# 2. 实例化三位员工 (定义打工人节点)
+# 2. 实例化三位员工
 # ==========================================
 
-# --- 员工 1：研究员 (真·全自动特工，Agent in Agent 架构) ---
+# --- 员工 1：研究员 ---
 researcher_agent = create_react_agent(
     model,
-    tools=[web_search_tool, execute_python_code],  # 💡 双武器直接挂载
+    tools=[web_search_tool, execute_python_code],
     prompt="""你是一个顶级的全栈数据研究员。
     你的任务是为爆款文章搜集最硬核的数据支撑。
     1. 你可以使用网页搜索工具查找最新资讯。
-    2. 如果你需要计算复杂的数据、或者需要写 Python 脚本去读取某个本地文件（如 Excel），请毫不犹豫地使用 execute_python_code 工具！
-    【⚠️ 极其重要的工作要求】：
-    你自己用工具把数据处理完后，必须总结出关键的商业洞察和核心数据结论，用大白话输出！绝不能把原始的 Python 代码或者报错信息直接扔给撰稿人！
+    2. 如果你需要分析本地文件（如 Excel），请务必使用 execute_python_code 工具！
+    【⚠️ 核心要求】：
+    你自己用工具处理完数据后，必须总结出核心数据结论（大白话），绝不能把原始的 Python 代码或者报错信息扔给撰稿人！
     """
 )
 
 
 def researcher_node(state: MessagesState):
-    # 把历史聊天记录塞给研究员 Agent，让它去小黑屋里疯狂干活并调用工具
     result = researcher_agent.invoke({"messages": state["messages"]})
-    # 提取最终结论交给下一棒
+
+    # 💡 核心抢修：扒开研究员的脑子，把代码写进日志！
+    for msg in result["messages"]:
+        # 如果大模型发出了调用工具的指令
+        if hasattr(msg, 'tool_calls') and msg.tool_calls:
+            for tc in msg.tool_calls:
+                if tc['name'] == 'execute_python_code':
+                    logging.info(f"💻 AI 编写的 Python 代码:\n{tc['args'].get('code', '')}")
+        # 如果工具返回了执行结果
+        elif hasattr(msg, 'name') and msg.name == 'execute_python_code':
+            logging.info(f"✅ Python 执行结果:\n{msg.content}")
+
     return {"messages": [result["messages"][-1]]}
 
 
-# --- 员工 2：撰稿人 (动态听令) ---
+# --- 员工 2：撰稿人 ---
 def writer_node(state: MessagesState):
     last_msg = state["messages"][-1].content
-
-    # 精准判定是否被打回
     if "【打回】" in last_msg:
         instruction = "你刚刚交上去的稿件被主编【打回】了！请务必在文章的最开头向主编郑重道歉，并严格根据主编的意见重写！"
     else:
@@ -100,9 +113,11 @@ def writer_node(state: MessagesState):
 
 # --- 员工 3：主编 (审核质检员) ---
 def editor_node(state: MessagesState):
-    sys_msg = SystemMessage(content="""你是一个极其苛刻的自媒体主编。你要审核写手刚刚交来的文章。
-    如果文章有具体数据、足够吸引人、emoji 运用得当，请在回复的最开头写【通过】，并给出简单表扬。
-    如果文章平庸、缺少真实数据或不够震惊，请在回复的最开头写【打回】，并给出极其严厉的修改意见！""")
+    # 💡 核心抢修：给主编加上“防死循环”的思想钢印！
+    sys_msg = SystemMessage(content="""你是一个自媒体主编。你要审核写手交来的文章。
+    如果文章有具体数据、足够吸引人，请在回复的最开头写【通过】，并给出表扬。
+    如果文章平庸或缺少数据，请在开头写【打回】。
+    【⚠️ 防死循环警告】：如果你看到写手已经在文章开头向你道歉并修改了，说明这是重写稿。此时只要文章里包含具体数据，请你大抬贵手，务必在开头写【通过】，绝不允许无限循环打回！""")
 
     response = model.invoke([sys_msg] + state["messages"])
     return {"messages": [response]}
@@ -126,7 +141,6 @@ def route_editor(state: MessagesState):
 @st.cache_resource
 def build_agency():
     builder = StateGraph(MessagesState)
-
     builder.add_node("researcher", researcher_node)
     builder.add_node("writer", writer_node)
     builder.add_node("editor", editor_node)
@@ -134,7 +148,6 @@ def build_agency():
     builder.add_edge(START, "researcher")
     builder.add_edge("researcher", "writer")
     builder.add_edge("writer", "editor")
-
     builder.add_conditional_edges("editor", route_editor)
 
     return builder.compile()
@@ -146,15 +159,16 @@ app = build_agency()
 # 5. Streamlit 可视化网页
 # ==========================================
 st.set_page_config(page_title="AI 传媒公司", page_icon="🏭")
-st.title("🏭 我的全自动 AI 传媒公司")
+st.title("🏭 我的全自动 AI 传媒公司 (带审计日志版)")
 st.markdown("工作流：**搜集员 (查网/写代码) ➡️ 撰稿人 (写稿) 🔁 主编 (审核把关)**")
 
-topic = st.text_input("你想让 AI 团队写什么主题的爆款文章？", value="请帮我查一下马斯克最近的猛料！")
+topic = st.text_input("你想让 AI 团队写什么主题的爆款文章？",
+                      value="主编，帮我写一篇关于 2026 年 2 月羽毛球馆运营数据的分析文章。让研究员先用 Python 读取 ~/Downloads/Badminton.xlsx 获取上课日志。")
 
 if st.button("🚀 下达任务，开始干活！"):
-    config = {"recursion_limit": 15}
+    # 💡 把安全阀稍微调高一点，防止主编偶尔发神经
+    config = {"recursion_limit": 20}
     inputs = {"messages": [HumanMessage(content=topic)]}
-
     final_article = ""
 
     with st.status("团队正在疯狂运转中...", expanded=True) as status:
@@ -163,8 +177,8 @@ if st.button("🚀 下达任务，开始干活！"):
                 msg = state_update["messages"][-1].content
 
                 if node_name == "researcher":
-                    st.write("🕵️‍♂️ **[研究员]** 资料搜集与数据分析完毕，正在移交撰稿人...")
-                    with st.expander("查看原始资料"):
+                    st.write("🕵️‍♂️ **[研究员]** 资料搜集与数据分析完毕！(代码已悄悄写入 `agent_run.log`)")
+                    with st.expander("查看交付给写手的数据结果"):
                         st.write(msg)
 
                 elif node_name == "writer":
