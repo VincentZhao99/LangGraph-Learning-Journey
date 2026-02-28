@@ -184,9 +184,18 @@ topic = st.text_input("你想让 AI 团队写什么主题的文章？",
 # 定义统一的运行流转引擎
 def run_graph(inputs=None):
     with st.status("团队疯狂运转中...", expanded=True) as status:
-        for output in app.stream(inputs, config):
+        # 强制指定 stream_mode
+        for output in app.stream(inputs, config, stream_mode="updates"):
             for node_name, state_update in output.items():
+
+                # 🛡️ 终极防弹衣：如果 state_update 不是字典，或者里面没有 messages，直接屏蔽跳过！
+                # 彻底剿灭 tuple indices 报错！
+                if type(state_update) is not dict or "messages" not in state_update:
+                    continue
+
                 msg = state_update["messages"][-1].content
+
+                # 动态打出 UI 弹幕
                 if node_name == "researcher":
                     st.write("🕵️‍♂️ **[研究员]** 数据分析完毕！(代码已记入日志)")
                 elif node_name == "writer":
@@ -203,7 +212,6 @@ def run_graph(inputs=None):
         # 💡 运行停下后，偷看一眼程序的“下一步”打算干嘛？
         current_state = app.get_state(config)
         if current_state.next and "publisher" in current_state.next:
-            # 如果它下一步想进发报房，说明被咱们的断点拦住了！
             status.update(label="✋ 触发拦截！等待老板最终审批！", state="error", expanded=True)
             st.session_state.awaiting_approval = True
         else:
