@@ -27,30 +27,6 @@ logging.basicConfig(
     encoding='utf-8'
 )
 
-
-def publish_to_wechat(article_content):
-    webhook_url = os.getenv("WEBHOOK_URL")
-    if not webhook_url:
-        return {"errcode": -1, "errmsg": "本地 .env 文件中未配置 WEBHOOK_URL"}
-
-    if len(article_content) > 1200:
-        safe_content = article_content[:1200] + "\n\n...（受限于企微字数，后文省略）"
-    else:
-        safe_content = article_content
-
-    payload = {
-        "msgtype": "markdown",
-        "markdown": {
-            "content": f"📢 **[AI 传媒公司] 最新爆款！**\n\n{safe_content}"
-        }
-    }
-    try:
-        response = requests.post(webhook_url, json=payload)
-        return response.json()
-    except Exception as e:
-        return {"errcode": -1, "errmsg": str(e)}
-
-
 # ==========================================
 # 1. 初始化模型
 # ==========================================
@@ -117,18 +93,56 @@ def editor_node(state: MessagesState):
     return {"messages": [response]}
 
 
-# --- 💡 新增员工 4：发报房 (专门负责推企微) ---
+# ==========================================
+# 💡 替换 1：修改企微发送函数（榨干字数极限）
+# ==========================================
+def publish_to_wechat(article_content):
+    webhook_url = os.getenv("WEBHOOK_URL")
+    if not webhook_url:
+        return {"errcode": -1, "errmsg": "本地 .env 文件中未配置 WEBHOOK_URL"}
+
+    # 企微硬性限制 4096 字节，我们把截断阈值稍微放宽到 1300 个字符
+    max_length = 1300
+    if len(article_content) > max_length:
+        safe_content = article_content[
+                       :max_length] + "\n\n> ⚠️ **(受限于企微4096字节限制，后文已省略。请在您的电脑项目目录下查看 `完整爆款文章.md` 查看全文！)**"
+    else:
+        safe_content = article_content
+
+    payload = {
+        "msgtype": "markdown",
+        "markdown": {
+            "content": f"📢 **[AI 传媒公司] 最新爆款！**\n\n{safe_content}"
+        }
+    }
+    try:
+        response = requests.post(webhook_url, json=payload)
+        return response.json()
+    except Exception as e:
+        return {"errcode": -1, "errmsg": str(e)}
+
+
+# ==========================================
+# 💡 替换 2：修改发报房节点（加入本地全文存档与日志）
+# ==========================================
 def publisher_node(state: MessagesState):
-    # 巧妙提取：倒数第 2 条消息一定是写手的最终稿（倒数第 1 条是主编的表扬）
+    # 提取最终稿
     final_article = state["messages"][-2].content
+
+    # 🌟 核心抢修：把一字不落的全文，写进项目文件夹下的 markdown 文件里！
+    with open("完整爆款文章.md", "w", encoding="utf-8") as f:
+        f.write(final_article)
+
+    # 🌟 同时把全文记入日志，做到双重备份！
+    logging.info(f"📄 最终完整版文章存档：\n{final_article}")
+
     wx_result = publish_to_wechat(final_article)
 
     if wx_result.get("errcode") == 0:
-        return {"messages": [SystemMessage(content="爆款文章已成功轰炸企业微信群！")]}
+        return {"messages": [SystemMessage(
+            content="爆款文章已推送到企微！**完整无删减版已自动保存在项目目录下的 `完整爆款文章.md` 中！**")]}
     else:
         return {"messages": [SystemMessage(content=f"企微发送失败，报错：{wx_result}")]}
-
-
 # ==========================================
 # 3. 裁判路由
 # ==========================================
