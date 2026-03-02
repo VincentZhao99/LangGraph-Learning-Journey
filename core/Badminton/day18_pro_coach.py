@@ -53,7 +53,7 @@ def process_video(input_path, output_path, action_type, start_sec, end_sec):
             ret, frame = cap.read()
             if not ret: break
 
-            # 💡 核心剪辑逻辑：不到起始时间就跳过，超过结束时间就直接罢工（极速省时间）！
+            # 剪辑逻辑 (保持不变)
             if current_frame < start_frame:
                 current_frame += 1
                 continue
@@ -67,7 +67,27 @@ def process_video(input_path, output_path, action_type, start_sec, end_sec):
             try:
                 landmarks = results.pose_landmarks.landmark
 
-                # 💡 动态骨骼抓取：根据动作类型，抓取不同的关节！
+                # =====================================================
+                # 💡 核心升级：面积过滤器 (防海报误识别)
+                # =====================================================
+                # 1. 收集所有关键点的横纵坐标
+                x_coords = [lm.x for lm in landmarks]
+                y_coords = [lm.y for lm in landmarks]
+                # 2. 计算边界框相对于画面的比例 (0.0 - 1.0)
+                box_height = max(y_coords) - min(y_coords)
+                box_width = max(x_coords) - min(x_coords)
+
+                # 3. 设定阈值：如果高度超过80%或宽度超过60%，认为是背景杂音，跳过！
+                # (老板可以根据实际场景微调这两个数字)
+                if box_height > 0.8 or box_width > 0.6:
+                    # 可以在这里打印一下，看看是不是成功拦截了
+                    # print(f"拦截到巨型背景目标! H:{box_height:.2f}, W:{box_width:.2f}")
+                    current_frame += 1
+                    out.write(image)  # 写入原始画面，但不画线
+                    continue
+                # =====================================================
+
+                # 💡 动态骨骼抓取 (保持不变)
                 if action_type == "高远球/杀球 (测上肢发力)":
                     # 抓取右臂：肩(12), 肘(14), 腕(16)
                     p1 = [landmarks[12].x, landmarks[12].y]
