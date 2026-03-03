@@ -172,7 +172,24 @@ def generate_coach_report(student_name, action_type, metrics):
 # ==========================================
 st.set_page_config(page_title="Pro 鹰眼私教舱", page_icon="🏸", layout="wide")
 st.title("🏸 AI 羽毛球私教系统 (终极版 🚀)")
-
+# ==========================================
+# 💡 核心 UI 调优：用 CSS 强行限制视频高度
+# ==========================================
+st.markdown(
+    """
+    <style>
+    /* 限制所有视频标签的最大高度为 450px，并且居中显示，顺便加个圆角显得更高级 */
+    video {
+        max-height: 450px !important;
+        width: auto !important;
+        border-radius: 12px;
+        display: block;
+        margin: 0 auto;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 # 💡 核心升级二：全局学员绑定
 st.sidebar.header("👤 学员信息绑定")
 current_student = st.sidebar.text_input("请输入当前学员姓名（用于建立专属档案）", value="天一")
@@ -197,11 +214,26 @@ with tab1:
         duration = total_frames / fps if fps > 0 else 10.0
         cap.release()
 
-        start_time, end_time = st.slider("✂️ 截取击球前后 2-3 秒精华", 0.0, float(duration),
-                                         (0.0, min(3.0, float(duration))), step=0.1)
+        # ==========================================
+        # 💡 核心 UX 升级：新增“所见即所得”视频监视器！
+        # ==========================================
+        st.markdown("### 📺 动作精准定位台")
+        st.info("💡 操作指南：请先播放下方原视频，找到挥拍瞬间的【开始】和【结束】秒数，然后拖动下方滑块截取。")
+
+        # 神奇的一行代码：直接把原视频在网页上播放出来！
+        st.video(input_video_path)
+        # ==========================================
+
+        # 滑块文案也做个小优化，提示用户结合上面的视频看
+        start_time, end_time = st.slider(
+            "✂️ 对照上方视频，截取击球前后 2-3 秒精华：",
+            0.0, float(duration),
+            (0.0, min(3.0, float(duration))),
+            step=0.1
+        )
 
         if st.button("🚀 开始精准诊断 & 存档", type="primary"):
-            col1, col2 = st.columns([1, 1])
+            col1, col2 = st.columns([1.2, 1.8])
 
             with col1:
                 with st.status("👁️ 视觉引擎剥离骨骼中...", expanded=True) as status_cv:
